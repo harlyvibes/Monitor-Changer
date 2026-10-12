@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "monitor-changer"
+dynamic = ["version"]
+description = "Windows system tray app to switch monitor inputs over DDC/CI"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = ["pystray>=0.19.5", "Pillow>=10"]
+classifiers = [
+    "Environment :: Win32 (MS Windows)",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: System :: Hardware",
+]
+
+[project.gui-scripts]
+monitor-changer = "monitor_changer.tray:main"
+
+[tool.setuptools]
+packages = ["monitor_changer"]
+
+[tool.setuptools.dynamic]
+version = { attr = "monitor_changer.__version__" }
