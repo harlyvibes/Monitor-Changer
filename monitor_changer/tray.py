@@ -232,6 +232,25 @@ class App:
         self._quiet_until = time.monotonic() + 8
         self._changed()
 
+    def _power(self, monitors, on):
+        state = "on" if on else "off"
+        failed = []
+        for monitor in monitors:
+            if self.busy or monitor not in self.monitors or not monitor.supported:
+                continue  # clicked in a menu built before a refresh
+            try:
+                monitor.set_power(on, self.config.power_off_value(monitor))
+            except OSError as exc:
+                log.error("%s: turning %s failed: %s", monitor.name, state, exc)
+                failed.append(self.config.label_for(monitor))
+            else:
+                log.info("%s: turned %s", monitor.name, state)
+        self._quiet_until = time.monotonic() + 8
+        self._changed()
+        if failed:
+            hint = "\nSome monitors stop listening for DDC/CI while off; use the power button." if on else ""
+            self._notify(f"Couldn't turn {state} {', '.join(failed)}.{hint}")
+
     def _poll(self):
         self._poll_queued = False
         changed = False
@@ -240,14 +259,18 @@ class App:
                 return
             if not monitor.supported:
                 continue
-            try:
-                current = monitor.read_input()
-            except OSError:
-                continue  # asleep, showing another input, ...
-            if current != monitor.current_input:
-                log.info("%s: input changed to %s", monitor.name, mccs.input_name(current))
-                monitor.current_input = current
-                changed = True
+            readers = {"current_input": monitor.read_input}
+            if self._can_power(monitor):
+                readers["power_on"] = monitor.read_power
+            for attr, read in readers.items():
+                try:
+                    value = read()
+                except OSError:
+                    continue  # asleep, showing another input, ...
+                if value != getattr(monitor, attr):
+                    log.info("%s: %s changed to %r", monitor.name, attr, value)
+                    setattr(monitor, attr, value)
+                    changed = True
         if changed:
             self._changed()
 
@@ -273,17 +296,33 @@ class App:
         names = [self.config.label_for(m) for m in monitors]
         return [f"{name} ({m.index})" if names.count(name) > 1 else name for m, name in zip(monitors, names)]
 
+    def _can_power(self, monitor):
+        return monitor.supported and bool(monitor.power_off_value or self.config.power_off_value(monitor))
+
+    def _status(self, monitor):
+        """Short state shown next to a monitor's name: "Off" or its current input."""
+        if monitor.power_on is False:
+            return "Off"
+        if monitor.current_input is None:
+            return ""
+        return self._input_label(monitor, monitor.current_input)
+
     def _tooltip(self):
         lines = [APP_NAME]
         for monitor, name in zip(self.monitors, self._display_names(self.monitors)):
-            if monitor.supported and monitor.current_input is not None:
-                lines.append(f"{name}: {self._input_label(monitor, monitor.current_input)}")
+            if monitor.supported and self._status(monitor):
+                lines.append(f"{name}: {self._status(monitor)}")
         text = "\n".join(lines)
         return text if len(text) <= 127 else text[:126] + "…"
 
     def _switch_action(self, monitor, code):
         def action():
             self._submit(self._switch, monitor, code)
+        return action
+
+    def _power_action(self, monitors, on):
+        def action():
+            self._submit(self._power, monitors, on)
         return action
 
     @staticmethod
@@ -305,20 +344,32 @@ class App:
             if not monitor.supported:
                 yield Item(f"{name}  (no DDC/CI)", None, enabled=False)
                 continue
-            inputs = [
+            items = [
                 Item(
                     _menu_text(label), self._switch_action(monitor, code),
                     checked=self._is_current(monitor, code), radio=True, enabled=not self.busy,
                 )
                 for code, label in config.inputs_for(monitor)
             ]
+            if self._can_power(monitor):
+                items += [
+                    pystray.Menu.SEPARATOR,
+                    Item("Power on", self._power_action([monitor], True), enabled=not self.busy),
+                    Item("Power off", self._power_action([monitor], False), enabled=not self.busy),
+                ]
+            title = f"{name}\t{_menu_text(self._status(monitor))}"
             if len(monitors) == 1:
-                # One monitor: list its inputs directly, one click to switch.
-                yield Item(name, None, enabled=False)
-                yield from inputs
+                # One monitor: list everything directly, one click to switch.
+                yield Item(title, None, enabled=False)
+                yield from items
             else:
-                current = self._input_label(monitor, monitor.current_input) if monitor.current_input is not None else ""
-                yield Item(f"{name}\t{_menu_text(current)}", pystray.Menu(*inputs))
+                yield Item(title, pystray.Menu(*items))
+
+        powerable = [m for m in monitors if self._can_power(m)]
+        if len(powerable) > 1:
+            yield pystray.Menu.SEPARATOR
+            yield Item("Power on all monitors", self._power_action(powerable, True), enabled=not self.busy)
+            yield Item("Power off all monitors", self._power_action(powerable, False), enabled=not self.busy)
 
         yield pystray.Menu.SEPARATOR
         yield Item("Refresh monitors", self.refresh, enabled=not self.busy)

@@ -49,6 +49,21 @@ class ParseCapabilitiesTest(unittest.TestCase):
         self.assertEqual(mccs.parse_capabilities("(vcp(021060(0F11)))")["vcp"], {0x02: [], 0x10: [], 0x60: [0x0F, 0x11]})
 
 
+class PowerModeTest(unittest.TestCase):
+    def test_off_value_from_capabilities(self):
+        dell = mccs.parse_capabilities(DELL)["vcp"][mccs.VCP_POWER_MODE]
+        lg = mccs.parse_capabilities(LG)["vcp"][mccs.VCP_POWER_MODE]
+        self.assertEqual(dell, [0x01, 0x04, 0x05])
+        self.assertEqual(mccs.power_off_value(dell), 0x04)
+        self.assertEqual(mccs.power_off_value(lg), 0x04)
+
+    def test_off_value_prefers_modes_that_can_wake(self):
+        self.assertEqual(mccs.power_off_value([0x01, 0x02, 0x05]), 0x02)
+        self.assertEqual(mccs.power_off_value([0x01, 0x05]), 0x05)
+        # Listed without values, or not at all: DPM off.
+        self.assertEqual(mccs.power_off_value([]), 0x04)
+
+
 class InputNamesTest(unittest.TestCase):
     def test_names(self):
         self.assertEqual(mccs.input_name(0x11), "HDMI 1")

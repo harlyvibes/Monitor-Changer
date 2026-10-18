@@ -226,6 +226,8 @@ class Monitor:
     capabilities: str = ""
     inputs: list = field(default_factory=list)  # input source values the monitor supports
     current_input: int | None = None
+    power_off_value: int | None = None  # power mode value for "off"; None if power control isn't offered
+    power_on: bool | None = None  # None when unknown
     error: str | None = None
 
     @property
@@ -233,7 +235,7 @@ class Monitor:
         return self.handle is not None and self.error is None
 
     def probe(self):
-        """Query DDC/CI for the current input and supported inputs.
+        """Query DDC/CI for the current and supported inputs, and power control.
 
         Slow (capabilities requests regularly take 1-2 seconds per monitor).
         Failures are recorded on ``error`` rather than raised.
@@ -262,11 +264,23 @@ class Monitor:
             self.inputs = list(mccs.FALLBACK_INPUTS)
         if self.current_input is not None and self.current_input not in self.inputs:
             self.inputs.append(self.current_input)
+
+        vcp = parsed.get("vcp")
+        # Offer power control when it's advertised, or when we can't tell.
+        if not vcp or mccs.VCP_POWER_MODE in vcp:
+            self.power_off_value = mccs.power_off_value((vcp or {}).get(mccs.VCP_POWER_MODE, []))
+            try:
+                self.power_on = self.read_power()
+            except OSError as exc:
+                log.info("%s: could not read power mode: %s", self.name, exc)
+
         log.info(
-            "%s: inputs=%s current=%s",
+            "%s: inputs=%s current=%s power_on=%s power_off_value=%s",
             self.name,
             [mccs.input_name(c) for c in self.inputs],
             mccs.input_name(self.current_input) if self.current_input is not None else None,
+            self.power_on,
+            f"0x{self.power_off_value:02X}" if self.power_off_value is not None else None,
         )
 
     def read_input(self):
@@ -277,6 +291,24 @@ class Monitor:
     def set_input(self, code):
         _retry(lambda: set_vcp(self.handle, mccs.VCP_INPUT_SOURCE, code))
         self.current_input = code
+
+    def read_power(self):
+        current, _ = _retry(lambda: get_vcp(self.handle, mccs.VCP_POWER_MODE))
+        return (current & 0xFF) == mccs.POWER_ON
+
+    def set_power(self, on, off_value=None):
+        """Turn the monitor on, or off with *off_value* (default: the detected best value)."""
+        if on:
+            value = mccs.POWER_ON
+        else:
+            value = off_value or self.power_off_value or mccs.POWER_OFF_PREFERENCE[0]
+        # A monitor that's off can be slow to answer, so try harder when waking it.
+        _retry(
+            lambda: set_vcp(self.handle, mccs.VCP_POWER_MODE, value),
+            attempts=5 if on else 3,
+            delay=0.3 if on else 0.15,
+        )
+        self.power_on = on
 
     def close(self):
         if self.handle is not None:

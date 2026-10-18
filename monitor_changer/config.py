@@ -23,6 +23,7 @@ DEFAULTS = {
     #   "label":  name to show instead of the monitor's own
     #   "inputs": {"0x0F": "Desktop"} renames inputs, and adds any the monitor doesn't report
     #   "hide":   ["0x12"] removes inputs from the menu
+    #   "power_off": "0x05" power mode value to send for "Power off" (default: detected)
     "monitors": {},
 }
 
@@ -81,6 +82,14 @@ class Config:
 
     def label_for(self, monitor):
         return str(self._monitor_settings(monitor).get("label") or monitor.name)
+
+    def power_off_value(self, monitor):
+        """The configured power mode value for "off", or None to use the detected one."""
+        value = self._monitor_settings(monitor).get("power_off")
+        code = None if value is None else parse_code(value)
+        if value is not None and not code:
+            log.warning("%s: ignoring invalid power_off %r in config", monitor.name, value)
+        return code or None
 
     def inputs_for(self, monitor):
         """The ``(code, label)`` pairs to offer for a monitor, sorted by code."""

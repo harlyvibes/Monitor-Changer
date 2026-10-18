@@ -35,6 +35,14 @@ INPUT_NAMES = {
 #: Shown when a monitor answers DDC/CI but doesn't list its inputs in its capabilities.
 FALLBACK_INPUTS = (0x0F, 0x10, 0x11, 0x12, 0x1B, 0x03, 0x01)
 
+#: VCP code for "Power Mode", and its "on" value.
+VCP_POWER_MODE = 0xD6
+POWER_ON = 0x01
+#: "Off" values in order of preference. DPM off (0x04), suspend and standby keep
+#: the monitor listening for DDC/CI so it can be turned back on; 0x05 is like
+#: pressing the power button and usually can't be undone remotely.
+POWER_OFF_PREFERENCE = (0x04, 0x03, 0x02, 0x05)
+
 # A VCP code, optionally followed by its value list (tolerating a truncated string).
 _HEX_CODE = re.compile(r"([0-9A-Fa-f]{2})\s*(?:\(([^()]*)(?:\)|$))?")
 _HEX_BYTE = re.compile(r"[0-9A-Fa-f]{2}")
@@ -119,3 +127,11 @@ def parse_capabilities(caps):
 def supported_inputs(caps):
     """Input source values a monitor advertises in its capabilities string."""
     return parse_capabilities(caps).get("vcp", {}).get(VCP_INPUT_SOURCE, [])
+
+
+def power_off_value(values):
+    """The best "off" value among the power modes a monitor lists, e.g. ``D6(01 04 05)``."""
+    for value in POWER_OFF_PREFERENCE:
+        if value in values:
+            return value
+    return POWER_OFF_PREFERENCE[0]

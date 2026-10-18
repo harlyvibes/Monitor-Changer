@@ -37,6 +37,15 @@ class ConfigTest(unittest.TestCase):
         # Other monitors are unaffected.
         self.assertEqual(config.label_for(monitor("LG")), "LG")
 
+    def test_power_off_override(self):
+        config = Config({"monitors": {
+            "DELL U2720Q": {"power_off": "0x05"},
+            "LG": {"power_off": "nope"},
+        }})
+        self.assertEqual(config.power_off_value(monitor()), 0x05)
+        self.assertIsNone(config.power_off_value(monitor("LG")))
+        self.assertIsNone(config.power_off_value(monitor("Other")))
+
     def test_parse_code(self):
         self.assertEqual(parse_code("0x0F"), 15)
         self.assertEqual(parse_code("15"), 15)
