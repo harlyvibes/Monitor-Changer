@@ -42,36 +42,34 @@ It talks to the monitors over **DDC/CI** using the Windows Monitor Configuration
 
 ## Install and run
 
-```bash
-git clone https://github.com/harlyvibes/Monitor-Changer.git
-```
+Everything is in one file, **[`monitor_changer.py`](monitor_changer.py)**. Put it anywhere you like.
+
+The tray needs two packages:
 
 ```bash
-cd Monitor-Changer
+pip install pystray Pillow
 ```
+
+If they're missing when you start the tray, it offers to install them into the Python that's running it. The command line options below need nothing beyond Python.
+
+To start the tray, double-click `monitor_changer.py`. Its console window hides itself, and the app keeps running in the tray. You can also start it from a terminal (the console stays visible and shows the log there):
 
 ```bash
-pip install -r requirements.txt
+python monitor_changer.py
 ```
 
-Then double-click **`MonitorChanger.pyw`** to start it without a console window. You can also run:
+If a console window stays open after a double-click (Windows Terminal can do this on Windows 11), rename the file to `monitor_changer.pyw`, or start it with `pythonw`:
 
 ```bash
-python -m monitor_changer
+pythonw monitor_changer.py
 ```
 
-To start it automatically at login, use **Start with Windows** in the tray menu. This adds an entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
-
-You can also install it as a package. This gives you a `monitor-changer` command that starts the tray app:
-
-```bash
-pip install .
-```
+To start it automatically at login, use **Start with Windows** in the tray menu. This adds an entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` that runs the file with `pythonw.exe`. If you move the file, turn the option off and on again.
 
 ## Command line
 
 ```bash
-python -m monitor_changer --list
+python monitor_changer.py --list
 ```
 
 ```
@@ -88,11 +86,11 @@ python -m monitor_changer --list
 ```
 
 ```bash
-python -m monitor_changer --set 2 dp1
+python monitor_changer.py --set 2 dp1
 ```
 
 ```bash
-python -m monitor_changer --power all off
+python monitor_changer.py --power all off
 ```
 
 `MONITOR` is the monitor's number from `--list`, part of its name, or `all`.
@@ -172,17 +170,23 @@ Input codes use the MCCS standard. The table below lists them, and `--list` show
 
 ## Development
 
+Run the tests from the repository folder:
+
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-| File | What it does |
+`monitor_changer.py` is split into sections, in this order:
+
+| Section | What it does |
 | --- | --- |
-| `monitor_changer/ddc.py` | Monitor enumeration and DDC/CI through `ctypes` and `dxva2.dll` |
-| `monitor_changer/mccs.py` | Capabilities-string parser, input names and power modes. Pure Python, unit tested. |
-| `monitor_changer/config.py` | The JSON config |
-| `monitor_changer/tray.py` | The tray app, built on [pystray](https://github.com/moses-palmer/pystray) |
-| `monitor_changer/autostart.py` | The "Start with Windows" registry entry |
+| MCCS | Capabilities-string parser, input names and power modes. Pure Python, unit tested. |
+| Windows API, DDC/CI | Monitor enumeration and DDC/CI through `ctypes` and `dxva2.dll` |
+| Config | The JSON config |
+| Start with Windows | The registry entry |
+| System tray | The tray app, built on [pystray](https://github.com/moses-palmer/pystray) |
+| Starting the tray | Installing missing packages, hiding the console, single instance |
+| Command line | `--list`, `--set` and `--power` |
 
 ## License
 

@@ -1,6 +1,6 @@
 import unittest
 
-from monitor_changer import mccs
+import monitor_changer as mc
 
 DELL = (
     "(prot(monitor)type(LCD)model(U2720Q)cmds(01 02 03 07 0C E3 F3)vcp(02 04 05 08 10 12 "
@@ -21,7 +21,7 @@ LG = (
 
 class ParseCapabilitiesTest(unittest.TestCase):
     def test_dell(self):
-        caps = mccs.parse_capabilities(DELL)
+        caps = mc.parse_capabilities(DELL)
         self.assertEqual(caps["model"], "U2720Q")
         self.assertEqual(caps["mccs_ver"], "2.1")
         self.assertEqual(caps["vcp"][0x60], [0x0F, 0x11, 0x1B])
@@ -30,57 +30,67 @@ class ParseCapabilitiesTest(unittest.TestCase):
         self.assertIn(0xFD, caps["vcp"])
 
     def test_lg_without_outer_parens(self):
-        caps = mccs.parse_capabilities(LG)
+        caps = mc.parse_capabilities(LG)
         self.assertEqual(caps["model"], "LG ULTRAGEAR")
         self.assertEqual(caps["vcp"][0x60], [0x11, 0x12, 0x0F])
         self.assertEqual(caps["vcp"][0x15][-1], 0x48)
-        self.assertEqual(mccs.supported_inputs(LG), [0x11, 0x12, 0x0F])
+        self.assertEqual(mc.supported_inputs(LG), [0x11, 0x12, 0x0F])
 
     def test_missing_input_list(self):
-        self.assertEqual(mccs.supported_inputs("(vcp(10 12 60 62))"), [])
+        self.assertEqual(mc.supported_inputs("(vcp(10 12 60 62))"), [])
 
     def test_empty_and_garbage(self):
-        self.assertEqual(mccs.parse_capabilities(""), {})
-        self.assertEqual(mccs.parse_capabilities(None), {})
-        self.assertEqual(mccs.supported_inputs("not a caps string"), [])
-        self.assertEqual(mccs.supported_inputs("(vcp(60(0F 11"), [0x0F, 0x11])
+        self.assertEqual(mc.parse_capabilities(""), {})
+        self.assertEqual(mc.parse_capabilities(None), {})
+        self.assertEqual(mc.supported_inputs("not a caps string"), [])
+        self.assertEqual(mc.supported_inputs("(vcp(60(0F 11"), [0x0F, 0x11])
 
     def test_codes_without_spaces(self):
-        self.assertEqual(mccs.parse_capabilities("(vcp(021060(0F11)))")["vcp"], {0x02: [], 0x10: [], 0x60: [0x0F, 0x11]})
+        self.assertEqual(mc.parse_capabilities("(vcp(021060(0F11)))")["vcp"], {0x02: [], 0x10: [], 0x60: [0x0F, 0x11]})
 
 
 class PowerModeTest(unittest.TestCase):
     def test_off_value_from_capabilities(self):
-        dell = mccs.parse_capabilities(DELL)["vcp"][mccs.VCP_POWER_MODE]
-        lg = mccs.parse_capabilities(LG)["vcp"][mccs.VCP_POWER_MODE]
+        dell = mc.parse_capabilities(DELL)["vcp"][mc.VCP_POWER_MODE]
+        lg = mc.parse_capabilities(LG)["vcp"][mc.VCP_POWER_MODE]
         self.assertEqual(dell, [0x01, 0x04, 0x05])
-        self.assertEqual(mccs.power_off_value(dell), 0x04)
-        self.assertEqual(mccs.power_off_value(lg), 0x04)
+        self.assertEqual(mc.best_power_off_value(dell), 0x04)
+        self.assertEqual(mc.best_power_off_value(lg), 0x04)
 
     def test_off_value_prefers_modes_that_can_wake(self):
-        self.assertEqual(mccs.power_off_value([0x01, 0x02, 0x05]), 0x02)
-        self.assertEqual(mccs.power_off_value([0x01, 0x05]), 0x05)
+        self.assertEqual(mc.best_power_off_value([0x01, 0x02, 0x05]), 0x02)
+        self.assertEqual(mc.best_power_off_value([0x01, 0x05]), 0x05)
         # Listed without values, or not at all: DPM off.
-        self.assertEqual(mccs.power_off_value([]), 0x04)
+        self.assertEqual(mc.best_power_off_value([]), 0x04)
 
 
 class InputNamesTest(unittest.TestCase):
     def test_names(self):
-        self.assertEqual(mccs.input_name(0x11), "HDMI 1")
-        self.assertEqual(mccs.input_name(0x0F), "DisplayPort 1")
-        self.assertEqual(mccs.input_name(0x90), "Input 0x90")
+        self.assertEqual(mc.input_name(0x11), "HDMI 1")
+        self.assertEqual(mc.input_name(0x0F), "DisplayPort 1")
+        self.assertEqual(mc.input_name(0x90), "Input 0x90")
 
     def test_parse_input(self):
-        self.assertEqual(mccs.parse_input("hdmi1"), 0x11)
-        self.assertEqual(mccs.parse_input("HDMI 2"), 0x12)
-        self.assertEqual(mccs.parse_input("dp1"), 0x0F)
-        self.assertEqual(mccs.parse_input("DisplayPort-2"), 0x10)
-        self.assertEqual(mccs.parse_input("usb-c"), 0x1B)
-        self.assertEqual(mccs.parse_input("0x11"), 0x11)
-        self.assertEqual(mccs.parse_input("17"), 0x11)
+        self.assertEqual(mc.parse_input("hdmi1"), 0x11)
+        self.assertEqual(mc.parse_input("HDMI 2"), 0x12)
+        self.assertEqual(mc.parse_input("dp1"), 0x0F)
+        self.assertEqual(mc.parse_input("DisplayPort-2"), 0x10)
+        self.assertEqual(mc.parse_input("usb-c"), 0x1B)
+        self.assertEqual(mc.parse_input("0x11"), 0x11)
+        self.assertEqual(mc.parse_input("17"), 0x11)
         for bad in ("hdmi9", "0x100", "-1", ""):
             with self.assertRaises(ValueError):
-                mccs.parse_input(bad)
+                mc.parse_input(bad)
+
+
+class MissingModuleTest(unittest.TestCase):
+    def test_reads_module_from_message(self):
+        self.assertEqual(mc._missing_module(ImportError("No module named 'pystray'")), "pystray")
+        self.assertEqual(mc._missing_module(ImportError("No module named 'PIL._imaging'")), "PIL")
+        # pystray wraps a missing dependency in its own error.
+        wrapped = ImportError("this platform is not supported: No module named 'six'")
+        self.assertEqual(mc._missing_module(wrapped), "six")
+        self.assertIsNone(mc._missing_module(ImportError("DLL load failed while importing _imaging")))
 
 
 if __name__ == "__main__":

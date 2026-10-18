@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from monitor_changer.config import Config, parse_code, write_template
+from monitor_changer import Config, parse_code, write_template
 
 
 def monitor(name="DELL U2720Q", inputs=(0x11, 0x0F, 0x1B), supported=True):
